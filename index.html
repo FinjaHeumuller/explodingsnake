@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snake</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --grid: #111118;
+    --grid-line: #1a1a26;
+    --apple: #ff3b3b;
+    --apple-shine: #ff7070;
+    --text: #e8e8f0;
+    --muted: #555568;
+    --accent: #ffffff;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 1rem;
+    user-select: none;
+  }
+
+  h1 {
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  #hud {
+    display: flex;
+    gap: 2.5rem;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+  }
+
+  #hud .val {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  #wrap {
+    position: relative;
+  }
+
+  canvas {
+    display: block;
+    border: 1px solid #1e1e2e;
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  #msg {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-align: center;
+    min-height: 16px;
+    text-transform: uppercase;
+  }
+
+  #color-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 4px;
+    transition: background 0.3s;
+  }
+</style>
+</head>
+<body>
+
+<h1>Snake</h1>
+
+<div id="hud">
+  <div>Score <span class="val" id="score">0</span></div>
+  <div><span id="color-swatch"></span>Snake <span class="val" id="snake-num">1</span></div>
+  <div>Apples <span class="val" id="apple-count">0</span></div>
+</div>
+
+<div id="wrap">
+  <canvas id="c"></canvas>
+</div>
+
+<div id="msg">Arrow keys / WASD to move &nbsp;·&nbsp; Click snake to explode</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const CELL = 22;
+const COLS = 22;
+const ROWS = 22;
+canvas.width  = COLS * CELL;
+canvas.height = ROWS * CELL;
+
+const COLORS = [
+  '#4ade80','#60a5fa','#f472b6','#fb923c',
+  '#a78bfa','#34d399','#fbbf24','#38bdf8',
+  '#e879f9','#f87171','#86efac','#93c5fd'
+];
+
+let snake, dir, nextDir, apples, particles;
+let snakeIdx = 0, score = 0;
+let exploding = false;
+let gameLoopId, appleTimerId;
+
+function rnd(n) { return Math.floor(Math.random() * n); }
+
+function spawnApple() {
+  for (let i = 0; i < 200; i++) {
+    const x = rnd(COLS), y = rnd(ROWS);
+    if (!snake.some(s => s.x===x && s.y===y) && !apples.some(a => a.x===x && a.y===y))
+      return { x, y };
+  }
+  return null;
+}
+
+function init() {
+  score = 0;
+  apples = [];
+  particles = [];
+  exploding = false;
+  dir = { x: 1, y: 0 };
+  nextDir = { x: 1, y: 0 };
+  snake = [
+    { x: 11, y: 11 },
+    { x: 10, y: 11 },
+    { x:  9, y: 11 }
+  ];
+  for (let i = 0; i < 4; i++) {
+    const a = spawnApple();
+    if (a) apples.push(a);
+  }
+  updateHUD();
+  updateSwatch();
+  clearInterval(appleTimerId);
+  appleTimerId = setInterval(() => {
+    if (exploding) return;
+    const a = spawnApple();
+    if (a) {
+      apples.push(a);
+      document.getElementById('apple-count').textContent = apples.length;
+    }
+  }, 2000);
+  clearInterval(gameLoopId);
+  gameLoopId = setInterval(tick, 115);
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('snake-num').textContent = snakeIdx + 1;
+  document.getElementById('apple-count').textContent = apples.length;
+}
+
+function updateSwatch() {
+  document.getElementById('color-swatch').style.background = COLORS[snakeIdx % COLORS.length];
+}
+
+function explodeSnake() {
+  if (exploding) return;
+  exploding = true;
+  clearInterval(gameLoopId);
+
+  const color = COLORS[snakeIdx % COLORS.length];
+  snake.forEach(seg => {
+    for (let i = 0; i < 10; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 6;
+      particles.push({
+        x: seg.x * CELL + CELL / 2,
+        y: seg.y * CELL + CELL / 2,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.025 + Math.random() * 0.02,
+        color,
+        r: 3 + Math.random() * 4
+      });
+    }
+  });
+
+  snake = [];
+  document.getElementById('msg').textContent = '💥  Exploded! New snake spawning…';
+
+  let frames = 0;
+  function animateExplosion() {
+    frames++;
+    drawFrame();
+    if (frames < 40) requestAnimationFrame(animateExplosion);
+    else respawn();
+  }
+  requestAnimationFrame(animateExplosion);
+}
+
+function respawn() {
+  snakeIdx++;
+  score = 0;
+  exploding = false;
+  dir = { x: 1, y: 0 };
+  nextDir = { x: 1, y: 0 };
+  particles = [];
+  snake = [
+    { x: 11, y: 11 },
+    { x: 10, y: 11 },
+    { x:  9, y: 11 }
+  ];
+  updateHUD();
+  updateSwatch();
+  document.getElementById('msg').textContent = 'Arrow keys / WASD to move · Click snake to explode';
+  gameLoopId = setInterval(tick, 115);
+}
+
+function tick() {
+  dir = { ...nextDir };
+  const head = {
+    x: (snake[0].x + dir.x + COLS) % COLS,
+    y: (snake[0].y + dir.y + ROWS) % ROWS
+  };
+  snake.unshift(head);
+  const ateIdx = apples.findIndex(a => a.x === head.x && a.y === head.y);
+  if (ateIdx >= 0) {
+    apples.splice(ateIdx, 1);
+    score++;
+    updateHUD();
+  } else {
+    snake.pop();
+  }
+  drawFrame();
+}
+
+function drawFrame() {
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid
+  ctx.strokeStyle = '#141420';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= COLS; x++) {
+    ctx.beginPath(); ctx.moveTo(x*CELL, 0); ctx.lineTo(x*CELL, H); ctx.stroke();
+  }
+  for (let y = 0; y <= ROWS; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y*CELL); ctx.lineTo(W, y*CELL); ctx.stroke();
+  }
+
+  // apples
+  apples.forEach(a => {
+    const cx = a.x * CELL + CELL/2;
+    const cy = a.y * CELL + CELL/2;
+    const r  = CELL/2 - 2;
+    ctx.fillStyle = '#ff3b3b';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(cx - r*0.3, cy - r*0.3, r*0.35, 0, Math.PI*2);
+    ctx.fill();
+    // stem
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + 3, cy - r - 4);
+    ctx.stroke();
+  });
+
+  // snake
+  const color = COLORS[snakeIdx % COLORS.length];
+  snake.forEach((seg, i) => {
+    const x = seg.x * CELL + 1;
+    const y = seg.y * CELL + 1;
+    const s = CELL - 2;
+
+    ctx.globalAlpha = exploding ? 0.15 : Math.max(0.25, 1 - i * 0.018);
+
+    if (i === 0) {
+      ctx.fillStyle = color;
+    } else {
+      // slight tint variation for body
+      ctx.fillStyle = color;
+    }
+
+    roundRect(ctx, x, y, s, s, i === 0 ? 7 : 5);
+    ctx.fill();
+
+    // body segment inner shadow
+    if (!exploding && i > 0) {
+      ctx.globalAlpha *= 0.4;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      roundRect(ctx, x+2, y+2, s-4, s-4, 3);
+      ctx.fill();
+    }
+
+    // eyes on head
+    if (i === 0 && !exploding) {
+      ctx.globalAlpha = 1;
+      drawEyes(seg, dir, color);
+    }
+
+    ctx.globalAlpha = 1;
+  });
+
+  // particles
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x  += p.vx;
+    p.y  += p.vy;
+    p.vy += 0.25;
+    p.life -= p.decay;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawEyes(seg, d, color) {
+  // pick eye offsets based on direction
+  let e1, e2;
+  const h = CELL;
+  if (d.x === 1)       { e1={x:.65,y:.3}; e2={x:.65,y:.7}; }
+  else if (d.x === -1) { e1={x:.35,y:.3}; e2={x:.35,y:.7}; }
+  else if (d.y === -1) { e1={x:.3,y:.35}; e2={x:.7,y:.35}; }
+  else                 { e1={x:.3,y:.65}; e2={x:.7,y:.65}; }
+
+  [e1, e2].forEach(e => {
+    const ex = seg.x * CELL + e.x * h;
+    const ey = seg.y * CELL + e.y * h;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(ex, ey, 2.8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(ex + d.x*0.5, ey + d.y*0.5, 1.4, 0, Math.PI*2); ctx.fill();
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);   ctx.arcTo(x+w, y,   x+w, y+r,   r);
+  ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);   ctx.arcTo(x,   y+h, x,   y+h-r, r);
+  ctx.lineTo(x,   y+r);   ctx.arcTo(x,   y,   x+r, y,     r);
+  ctx.closePath();
+}
+
+// click detection
+canvas.addEventListener('click', e => {
+  if (exploding) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width  / rect.width;
+  const sy = canvas.height / rect.height;
+  const mx = Math.floor(((e.clientX - rect.left) * sx) / CELL);
+  const my = Math.floor(((e.clientY - rect.top)  * sy) / CELL);
+  if (snake.some(s => s.x === mx && s.y === my)) explodeSnake();
+});
+
+// keyboard
+document.addEventListener('keydown', e => {
+  const map = {
+    ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1},
+    ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0},
+    w:{x:0,y:-1}, s:{x:0,y:1}, a:{x:-1,y:0}, d:{x:1,y:0},
+    W:{x:0,y:-1}, S:{x:0,y:1}, A:{x:-1,y:0}, D:{x:1,y:0}
+  };
+  const nd = map[e.key];
+  if (!nd) return;
+  if (nd.x === -dir.x && nd.y === -dir.y) return;
+  nextDir = nd;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+
+init();
+</script>
+</body>
+</html>
